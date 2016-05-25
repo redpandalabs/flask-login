@@ -5,7 +5,6 @@
     The LoginManager class.
 '''
 
-
 import warnings
 from datetime import datetime
 
@@ -32,6 +31,7 @@ class LoginManager(object):
     one in the main body of your code and then bind it to your
     app in a factory function.
     '''
+
     def __init__(self, app=None, add_context_processor=True):
         #: A class or factory function that produces an anonymous user, which
         #: is used when no one is logged in.
@@ -144,27 +144,13 @@ class LoginManager(object):
         This should be returned from a view or before/after_request function,
         otherwise the redirect will have no effect.
         '''
-        user_unauthorized.send(current_app._get_current_object())
+        return self._foo(self.unauthorized_callback, self.login_message,
+                         self.login_message_category, user_unauthorized,
+                         self._login_view())
 
-        if self.unauthorized_callback:
-            return self.unauthorized_callback()
-
-        if request.blueprint in self.blueprint_login_views:
-            login_view = self.blueprint_login_views[request.blueprint]
-        else:
-            login_view = self.login_view
-
-        if not login_view:
-            abort(401)
-
-        if self.login_message:
-            if self.localize_callback is not None:
-                flash(self.localize_callback(self.login_message),
-                      category=self.login_message_category)
-            else:
-                flash(self.login_message, category=self.login_message_category)
-
-        return redirect(login_url(login_view, request.url))
+    def _login_view(self):
+        return self.blueprint_login_views.get(request.blueprint,
+                                              self.login_view)
 
     def user_loader(self, callback):
         '''
@@ -261,22 +247,26 @@ class LoginManager(object):
         This should be returned from a view or before/after_request function,
         otherwise the redirect will have no effect.
         '''
-        user_needs_refresh.send(current_app._get_current_object())
+        return self._foo(self.needs_refresh_callback,
+                         self.needs_refresh_message,
+                         self.needs_refresh_message_category,
+                         user_needs_refresh, self.refresh_view)
 
-        if self.needs_refresh_callback:
-            return self.needs_refresh_callback()
+    def _foo(self, callback, message, message_category, signal, view):
+        signal.send(current_app._get_current_object())
+        if callback:
+            return callback()
+        return self._return_view_with_localized_message(
+            message, message_category, view)
 
-        if not self.refresh_view:
+    def _return_view_with_localized_message(self, message, message_category,
+                                            view):
+        if not view:
             abort(401)
-
-        if self.localize_callback is not None:
-            flash(self.localize_callback(self.needs_refresh_message),
-                  category=self.needs_refresh_message_category)
-        else:
-            flash(self.needs_refresh_message,
-                  category=self.needs_refresh_message_category)
-
-        return redirect(login_url(self.refresh_view, request.url))
+        flash(self.localize_callback(message)
+              if self.localize_callback is not None else message,
+              category=message_category)
+        return redirect(login_url(view, request.url))
 
     def reload_user(self, user=None):
         ctx = _request_ctx_stack.top
